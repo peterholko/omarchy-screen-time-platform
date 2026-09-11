@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/jankeesvw/omarchy",
+  "pull_request": "https://github.com/omacom/omarchy/pull/11196",
+  "commit": "e0737ad8fb606012603e4abe8379930664040595",
+  "description": "Screen-time UI and enforcement derived from this PR; child-profile installation changes are not included."
+}

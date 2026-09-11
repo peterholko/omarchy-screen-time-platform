@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+
+# Run from the parent's terminal; this installs a reviewed local checkout.
+if [[ ${1:-} == "--help" ]]; then
+  echo 'Usage: ./setup --user CHILD [--upgrade]'
+  echo 'Install the separate Screen Time service on Omarchy. Requires OMARCHY_PATH.'
+else
+  : "${OMARCHY_PATH:?Run setup from an Omarchy desktop terminal with OMARCHY_PATH set}"
+  source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+  sudo /usr/bin/python3 -I "$source_dir/service/install.py" --omarchy-path "$OMARCHY_PATH" "$@"
+fi

@@ -1,0 +1,35 @@
+[Unit]
+Description=Peter Holko Screen Time platform
+After=systemd-logind.service
+Wants=systemd-logind.service
+
+[Service]
+Type=simple
+Environment=PATH=/usr/bin:/bin
+EnvironmentFile=/etc/peterholko-screen-time/desktop.env
+ExecStart=/bin/bash /usr/lib/peterholko-screen-time/service/daemon.sh
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+UMask=0077
+RuntimeDirectory=peterholko-screen-time
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
+StateDirectory=peterholko-screen-time
+StateDirectoryMode=0700
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/peterholko-screen-time /run/peterholko-screen-time
+NoNewPrivileges=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

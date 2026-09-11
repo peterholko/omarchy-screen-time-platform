@@ -1,0 +1,15 @@
+{
+  "name": "Default",
+  "philosophy": "limits",
+  "budget_minutes": {"mon": 60, "tue": 60, "wed": 60, "thu": 60, "fri": 60, "sat": 90, "sun": 90},
+  "blocked_periods": [{"label": "Bedtime", "enabled": false, "start": "20:00", "end": "07:00"}],
+  "warn_minutes": [15, 5, 1],
+  "on_empty": "lock",
+  "grace_seconds": 60,
+  "relock_seconds": 30,
+  "unlock_grace_seconds": 120,
+  "agreement_text": "",
+  "agreement_minutes": 0,
+  "break_nudge_minutes": 45,
+  "credits": {"enabled": false, "daily_cap_minutes": 30, "providers": {}}
+}

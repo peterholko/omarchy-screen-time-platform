@@ -15,6 +15,7 @@ ST_RUN="${PETERHOLKO_SCREEN_TIME_RUN:-/run/peterholko-screen-time}"
 ST_CONFIG="$ST_ETC/config.json"
 ST_LOCK="$ST_RUN/lock"
 ST_GROUP="peterholko-screen-time"
+ST_SERVICE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 ST_TICK=5
 ST_REST_RESET=300 # five quiet minutes and a stretch starts over
@@ -27,7 +28,7 @@ ST_LOCK_FAILURES_MAX=3 # locks in a row the shell fails before root ends the ses
 # running is unlimited screen time.
 read -r -d '' ST_JQ_LIB <<'JQ' || true
 def days: ["mon","tue","wed","thu","fri","sat","sun"];
-def default_profile: {"name": "Default", "philosophy": "limits", "budget_minutes": {"mon": 60, "tue": 60, "wed": 60, "thu": 60, "fri": 60, "sat": 90, "sun": 90}, "blocked_periods": [{"label": "Bedtime", "enabled": false, "start": "20:00", "end": "07:00"}], "warn_minutes": [15, 5, 1], "on_empty": "lock", "grace_seconds": 60, "relock_seconds": 30, "unlock_grace_seconds": 120, "agreement_text": "", "agreement_minutes": 0, "break_nudge_minutes": 45, "credits": {"enabled": false, "daily_cap_minutes": 30, "providers": {}}};
+def default_profile: {"name": "Default", "philosophy": "limits", "respect_school_mode": false, "budget_minutes": {"mon": 60, "tue": 60, "wed": 60, "thu": 60, "fri": 60, "sat": 90, "sun": 90}, "blocked_periods": [{"label": "Bedtime", "enabled": false, "start": "20:00", "end": "07:00"}], "warn_minutes": [15, 5, 1], "on_empty": "lock", "grace_seconds": 60, "relock_seconds": 30, "unlock_grace_seconds": 120, "agreement_text": "", "agreement_minutes": 0, "break_nudge_minutes": 45, "credits": {"enabled": false, "daily_cap_minutes": 30, "providers": {}}};
 def default_config: {version: 2, authentication: {pin_enabled: false, pin: null}, active_profile: "default", profiles: {default: default_profile}, users: {}, providers: {}};
 
 def clampint($fallback; $low; $high):
@@ -65,6 +66,7 @@ def sanitize_profile:
   {
     name: (($raw.name // $d.name) | tostring | .[:40]),
     philosophy: (if ($raw.philosophy == "together") then "together" else "limits" end),
+    respect_school_mode: ($raw.respect_school_mode == true),
     agreement_text: (($raw.agreement_text // "") | tostring | .[:500]),
     agreement_minutes: ($raw.agreement_minutes | clampint($d.agreement_minutes; 0; 1440)),
     break_nudge_minutes: ($raw.break_nudge_minutes | clampint($d.break_nudge_minutes; 0; 480)),
@@ -272,6 +274,17 @@ st_history() {
 
 # what the widget reads --------------------------------------------------------
 
+st_school_status() {
+  # $1 enrolled username, $2 profile JSON, $3 current time. This reads the
+  # separate School Mode service; it never installs or enables that service.
+  if [[ $(jq -r '.respect_school_mode == true' <<<"$2") == "true" ]]; then
+    /usr/bin/python3 -I "$ST_SERVICE_DIR/school.py" "$1" "$3" \
+      || printf '%s\n' '{"linked":true,"available":false,"active":false,"reason":"unavailable"}'
+  else
+    printf '%s\n' '{"linked":false,"available":false,"active":false,"reason":"disabled"}'
+  fi
+}
+
 st_publish() {
   # $1 uid, stdin: JSON. Written where the account itself can read it and
   # nobody can write it: the directory is root's, group the account's, 0750.
@@ -302,10 +315,12 @@ st_status_json() {
     ($enabled | map(select(covers($moment))) | .[0]) as $blocking |
     (($enabled | map(select(.start > $moment)) | sort_by(.start) | .[0]) // ($enabled | sort_by(.start) | .[0])) as $next |
     ($profile.philosophy == "together") as $together |
+    ($rt.school_mode // {linked: false, available: false, active: false, reason: "disabled"}) as $school |
+    ($profile.respect_school_mode == true and $school.linked == true and $school.available == true and $school.active == true) as $school_active |
     ($day | day_remaining) as $remaining |
-    (if $together then null elif $blocking != null then "bedtime" elif $remaining <= 0 then "empty" else null end) as $reason |
+    (if $rt.parent_lock_requested then "parent-lock" elif $together then null elif $blocking != null then "bedtime" elif $school_active then null elif $remaining <= 0 then "empty" else null end) as $reason |
     ($rt.session.present and $rt.session.active and ($rt.session.locked | not)) as $in_use |
-    (if $rt.paused then "paused" elif $reason == "bedtime" then "bedtime" elif $reason == "empty" then "empty" elif ($in_use | not) then "idle" else "running" end) as $phase |
+    (if $rt.parent_lock_requested then "parent-lock" elif $rt.paused then "paused" elif $reason != null then $reason elif $school_active then "school" elif ($in_use | not) then "idle" else "running" end) as $phase |
     ($profile.credits.daily_cap_minutes * 60 - $day.credited_seconds | if . < 0 then 0 else . end) as $room |
     {
       ok: true, plugin_id: "peterholko.screen-time", api_version: 1, user: $user, profile: $key, profile_name: $profile.name,
@@ -313,13 +328,13 @@ st_status_json() {
       agreement_minutes: $profile.agreement_minutes, break_nudge_minutes: $profile.break_nudge_minutes,
       stretch_seconds: ($rt.stretch | floor),
       reflections: ([$day.ledger[] | select(.kind == "reflection") | {t: (.t // 0), text: ((.meta.text // "") | tostring)}] | .[-20:]),
-      day: $day.day, phase: $phase, counting: ($phase == "running"),
+      day: $day.day, phase: $phase, counting: ($phase == "running"), school_mode: $school,
       remaining_seconds: (if $remaining < 0 then 0 else $remaining end),
       budget_seconds: $day.budget_seconds, spent_seconds: $day.spent_seconds,
       credited_seconds: $day.credited_seconds, granted_seconds: $day.granted_seconds,
       warn_seconds: ($profile.warn_minutes | map(. * 60)),
       locked: $rt.session.locked, session_present: $rt.session.present,
-      lock_in_seconds: (if ($rt.lock_after != null and $reason != null and ($rt.paused | not)) then ([$rt.lock_after - $now, 0] | max | floor) else null end),
+      lock_in_seconds: (if ($rt.lock_after != null and $reason != null and (($rt.paused | not) or $rt.parent_lock_requested)) then ([$rt.lock_after - $now, 0] | max | floor) else null end),
       blocked_periods: $profile.blocked_periods,
       blocked_label: ($blocking.label // ""),
       next_block: $next,
@@ -327,7 +342,7 @@ st_status_json() {
       on_empty: $profile.on_empty,
       pin_enabled: $pin_enabled,
       credits: {
-        enabled: $profile.credits.enabled,
+        enabled: ($profile.credits.enabled and ($school_active | not) and ($rt.parent_lock_requested | not)),
         cap_seconds: ($profile.credits.daily_cap_minutes * 60), room_seconds: $room,
         providers: ($profile.credits.providers | with_entries(.key as $id | .value += {credited_today_seconds: ($day.credit_totals[$id] // 0)})),
         events: ([$day.ledger[] | select(.kind == "credit") |

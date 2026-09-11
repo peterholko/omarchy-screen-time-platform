@@ -12,6 +12,18 @@ installer = importlib.util.module_from_spec(spec); spec.loader.exec_module(insta
 
 
 class InstallTest(unittest.TestCase):
+    def test_standalone_school_roster_is_allowed_and_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "etc/omarchy-kids-controls/school-mode.json"
+            path.parent.mkdir(parents=True)
+            original = '{"users":{"linnea":{"profile":"linnea"}},"profiles":{"linnea":{"school_apps":["org.gnome.Calculator.desktop"]}}}'
+            path.write_text(original)
+            installer.assert_no_conflict("linnea", root)
+            self.assertEqual(path.read_text(), original)
+        files = installer.payload(ROOT, "/opt/omarchy")
+        self.assertIn(Path("/usr/lib/peterholko-screen-time/service/school.py"), files)
+
     def test_conflict_is_per_account_and_does_not_change_other_roster(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

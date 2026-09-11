@@ -110,7 +110,7 @@ class ParentWindow(QMainWindow):
         self.lock_settings = QPushButton("Lock settings"); self.lock_settings.clicked.connect(lambda: self.sign_out())
         top.addWidget(self.lock_settings); layout.addLayout(top)
         self.tabs = QTabWidget(); self.tabs.setObjectName("settingsTabs"); layout.addWidget(self.tabs, 1)
-        self.make_today(); self.make_limits(); self.make_agreement(); self.make_games(); self.make_security()
+        self.make_today(); self.make_limits(); self.make_agreement(); self.make_games(); self.make_security(); self.make_school()
         bottom = QHBoxLayout()
         bottom.addWidget(label("Changes require your parent password or enabled PIN."), 1)
         self.save = QPushButton("Save settings"); self.save.setObjectName("saveSettings"); self.save.clicked.connect(self.save_settings)
@@ -203,7 +203,7 @@ class ParentWindow(QMainWindow):
         layout.addWidget(self.credits_enabled)
         form = QFormLayout(); self.credit_cap = number(0, 1440, 30, "creditDailyCap")
         form.addRow("Maximum minutes from all games per day", self.credit_cap); layout.addLayout(form)
-        layout.addWidget(label("Each game verifies its own completed activities. These limits apply together with the overall daily maximum. Credits pause in Agreement mode, during blocked periods, and while tracking is paused or the session is locked."))
+        layout.addWidget(label("Each game verifies its own completed activities. These limits apply together with the overall daily maximum. Credits pause in Agreement mode, during blocked periods or connected School Mode, and while tracking is paused or the session is locked."))
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         self.games_body = QWidget(); self.games_layout = QVBoxLayout(self.games_body)
         scroll.setWidget(self.games_body); layout.addWidget(scroll, 1)
@@ -224,8 +224,31 @@ class ParentWindow(QMainWindow):
         layout.addWidget(label("Enabling, changing or disabling the PIN requires your current parent password or enabled PIN. Saving locks this window and asks you to sign in again."))
         layout.addStretch()
 
+    def make_school(self):
+        layout = self.tab("School Mode")
+        self.respect_school = QCheckBox("Connect to the separate School Mode plugin")
+        self.respect_school.setObjectName("respectSchoolMode"); layout.addWidget(self.respect_school)
+        layout.addWidget(label("During School Mode, pause the free-time budget and game rewards. Free Time resumes the remaining budget. School hours also pause usage tracking and break reminders in Agreement mode."))
+        layout.addWidget(label("Bedtime and other blocked periods still apply in Limits mode. Explicit parent locks still apply in both modes."))
+        self.school_status = label("Connection is off.", "schoolStatus"); layout.addWidget(self.school_status)
+        layout.addWidget(label("Use the School / Free Time plugin to manage the school schedule, application whitelist and password-protected Free Time. Install it separately from github.com/peterholko/omarchy-school-mode."))
+        layout.addWidget(label("This connection starts off. If School Mode is unavailable or its status stops updating, normal screen-time rules apply. Saving this setting requires your parent password or enabled PIN."))
+        layout.addStretch()
+
     def refresh_status(self):
         status = self.backend.status()
+        school = status.get("school_mode", {})
+        if not status.get("ok"):
+            school_text = "Screen Time status is unavailable."
+        elif not school.get("linked"):
+            school_text = "Connection is off."
+        elif not school.get("available"):
+            school_text = "School Mode is unavailable for this account. Normal screen-time rules apply."
+        elif school.get("active"):
+            school_text = "School Mode is active. The free-time budget and game rewards are paused."
+        else:
+            school_text = "Free Time is active. Normal screen-time rules apply."
+        self.school_status.setText(school_text)
         enabled = status.get("pin_enabled", False)
         self.auth_method.model().item(1).setEnabled(enabled)
         if not enabled and self.auth_method.currentData() == "pin":
@@ -250,6 +273,7 @@ class ParentWindow(QMainWindow):
     def load(self, result):
         self.snapshot = result; profile = result["profile"]
         self.mode.setCurrentIndex(1 if profile["philosophy"] == "together" else 0)
+        self.respect_school.setChecked(profile.get("respect_school_mode", False))
         for day, field in self.budgets.items():
             field.setValue(profile["budget_minutes"][day])
         self.periods.setRowCount(0)
@@ -283,6 +307,7 @@ class ParentWindow(QMainWindow):
             "start": self.periods.cellWidget(row, 2).time().toString("HH:mm"), "end": self.periods.cellWidget(row, 3).time().toString("HH:mm")}
             for row in range(self.periods.rowCount())]
         patch = {"philosophy": self.mode.currentData(), "budget_minutes": {day: field.value() for day, field in self.budgets.items()},
+            "respect_school_mode": self.respect_school.isChecked(),
             "blocked_periods": periods, "on_empty": self.on_empty.currentData(), "grace_seconds": self.grace.value(),
             "agreement_text": self.agreement.toPlainText(), "agreement_minutes": self.agreement_minutes.value(), "break_nudge_minutes": self.nudge.value(),
             "credits": {"enabled": self.credits_enabled.isChecked(), "daily_cap_minutes": self.credit_cap.value(), "providers": {

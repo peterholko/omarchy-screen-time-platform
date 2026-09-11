@@ -58,7 +58,7 @@ An accepted receipt returns:
 
 Credits equal the smallest of the configured per-event reward, the provider's remaining daily allowance and the remaining allowance across all games. The last award may be partial. Manual parent grants do not consume game allowances. Changing budgets or switching modes does not erase earned credits, spent time or receipts.
 
-Accepted zero-credit results use `reason` values `credits_disabled`, `policy_blocked`, `session_unavailable` or `daily_cap_reached`. They are final for that receipt. A fresh daemon session observation (within 30 seconds) is required; a stopped service's stale state cannot enable credits. An activity completed while credits are disabled or blocked does not become eligible when a parent later changes the settings.
+Accepted zero-credit results use `reason` values `credits_disabled`, `school_mode_active`, `policy_blocked`, `session_unavailable` or `daily_cap_reached`. They are final for that receipt. A fresh daemon session observation (within 30 seconds) is required; a stopped service's stale state cannot enable credits. An activity completed while credits are disabled or blocked does not become eligible when a parent later changes the settings. `school_mode_active` means the parent enabled the optional School Mode connection and the separate service currently reports School Mode. Resubmitting that receipt in Free Time still returns zero.
 
 ## Retries, durability and limits
 
@@ -73,6 +73,10 @@ If the platform is absent or disabled, the game continues ordinary play, collect
 ## Read-only status and parent settings
 
 Public status includes remaining, budget, spent, credited and parent-granted seconds, mode, phase, and `credits` containing the overall switch, cap, remaining allowance and per-provider policy/totals. It contains no parent password, PIN hash or authentication attempt details. Files are root-owned and readable for the enrolled account's group.
+
+Since plugin version 1.1.0, public status also includes `school_mode: {linked, available, active, reason}`. The `school` phase indicates paused school-time accounting; bedtime, explicit parent locks (`parent-lock`) and a parent pause take precedence in the displayed phase. `credits.enabled` is an effective availability flag: it becomes false during connected School Mode or a pending parent lock without changing the saved parent preference. Existing v1 game adapters that honor this flag require no new endpoint. The root credit helper independently checks current School Mode status for every new receipt.
+
+The optional `respect_school_mode` profile setting is a strict boolean, defaults to false for new and existing profiles, and can only be changed through authenticated `config.patch`. The reader accepts the original School Mode service's `schemaVersion: 1` status at `/var/lib/omarchy-kids-controls/status/ACCOUNT/school-mode/status.json`. It requires root ownership, no symlinks or group/other write access, an enrolled account, and both a status timestamp and file modification time within 30 seconds (with five seconds of clock tolerance). An unavailable source never exempts time from the budget. The connection has no write access to School Mode policy through this API.
 
 The parent application alone uses the credential-protected control transport for `config.get`, `config.patch`, `pin.set`, `grant`, `pause`, `resume` and `lock`. Agreement notes use `reflect` and `forget` without a parent credential. There is no game credit or quiz operation on that transport. Sudo supplies the caller identity; a payload cannot select another child's account.
 

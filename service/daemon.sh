@@ -36,7 +36,8 @@ def covers($m): if .start == .end then false elif .start < .end then (.start <= 
 def blocking: [$profile.blocked_periods[] | select(.enabled and covers($moment))] | .[0];
 def headline($reason): if $reason == "parent" then "A parent requested a screen lock." elif $reason == "empty" then "Today's screen time is used up." else "It is \(((blocking.label // "a quiet time") | ascii_downcase))." end;
 def together: $profile.philosophy == "together";
-def reason: if .rt.parent_lock_requested then "parent" elif together then null elif blocking != null then "bedtime" elif (.day | day_remaining) <= 0 then "empty" else null end;
+def school_active: $profile.respect_school_mode == true and $school.linked == true and $school.available == true and $school.active == true;
+def reason: if .rt.parent_lock_requested then "parent" elif together then null elif blocking != null then "bedtime" elif school_active then null elif (.day | day_remaining) <= 0 then "empty" else null end;
 def clear_block: .rt.blocked_since = null | .rt.lock_after = null | .rt.lock_count = 0 | .rt.last_lock_ok = false | .rt.lock_failures = 0;
 def record($kind; $meta): .day.ledger += [{t: $now, kind: $kind} + (if $meta == null then {} else {meta: $meta} end)];
 
@@ -107,11 +108,11 @@ def enforce:
     else . end
   end;
 
-{day: $day, rt: ($rt | .session = $session | .day = $daykey | .updated_at = $now), actions: []} |
+{day: $day, rt: ($rt | .session = $session | .school_mode = $school | .day = $daykey | .updated_at = $now), actions: []} |
 # A new day starts with no lock pending and no block remembered.
 (if $rt.day != $daykey then .rt.lock_after = null | .rt.lock_count = 0 | .rt.blocked_since = null else . end) |
 ([$step, $tick * 4] | min) as $step |
-((.rt.session.present and .rt.session.active and (.rt.session.locked | not)) and (.rt.paused | not) and (reason == null)) as $counting |
+((.rt.session.present and .rt.session.active and (.rt.session.locked | not)) and (.rt.paused | not) and (school_active | not) and (reason == null)) as $counting |
 (if $counting then
    .day.spent_seconds += $step | .rt.stretch += $step | .rt.rest_since = null |
    (if together then nudge else warn end)
@@ -127,7 +128,7 @@ JQ
 tick_account() {
   # $1 uid, $2 user, $3 config, $4 now, $5 elapsed seconds since the last tick
   local uid=$1 user=$2 config=$3 now=$4 elapsed=$5
-  local pf key profile daykey budget day rt session result
+  local pf key profile daykey budget day rt session school result
   # Read again under the shared state lock: a parent may have changed a
   # budget or removed this account since tick() collected the roster.
   config=$(st_config)
@@ -143,8 +144,9 @@ tick_account() {
 
   day=$(st_load_day "$uid" "$daykey" "$budget" "$key")
   rt=$(st_load_runtime "$uid")
+  school=$(st_school_status "$user" "$profile" "$now")
   result=$(st_jq -n --argjson day "$day" --argjson rt "$rt" --argjson profile "$profile" \
-    --argjson session "$session" --argjson now "$now" --argjson step "$elapsed" \
+    --argjson session "$session" --argjson school "$school" --argjson now "$now" --argjson step "$elapsed" \
     --argjson tick "$TICK" --argjson rest_reset "$ST_REST_RESET" --argjson lock_failures_max "$ST_LOCK_FAILURES_MAX" \
     --arg moment "$(st_moment "$now")" --arg daykey "$daykey" "$TICK_JQ") || {
     log "tick failed for $user"

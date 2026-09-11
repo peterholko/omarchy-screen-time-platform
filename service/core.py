@@ -17,6 +17,7 @@ import re
 import tempfile
 import time
 from auth import parent_password_ok, pin_record, verify_pin
+from school import snapshot as school_snapshot
 
 PLUGIN_ID = "peterholko.screen-time"
 API_VERSION = 1
@@ -68,9 +69,11 @@ def write(path, value, mode=0o600, gid=None):
 
 class Core:
     def __init__(self, etc=Path("/etc/peterholko-screen-time"), state=Path("/var/lib/peterholko-screen-time"),
-                 run=Path("/run/peterholko-screen-time"), clock=time.time, verifier=parent_password_ok):
+                 run=Path("/run/peterholko-screen-time"), clock=time.time, verifier=parent_password_ok,
+                 school_reader=school_snapshot):
         self.etc, self.state, self.run = Path(etc), Path(state), Path(run)
         self.clock, self.verifier = clock, verifier
+        self.school_reader = school_reader
 
     @contextmanager
     def locked(self, name="lock", nonblocking=False):
@@ -87,8 +90,11 @@ class Core:
             os.close(fd)
 
     def config(self):
-        return read(self.etc / "config.json", {"version": 2, "authentication": {"pin_enabled": False, "pin": None},
+        config = read(self.etc / "config.json", {"version": 2, "authentication": {"pin_enabled": False, "pin": None},
             "active_profile": "default", "profiles": {"default": DEFAULT_PROFILE}, "users": {}, "providers": {}})
+        for profile in config["profiles"].values():
+            profile.setdefault("respect_school_mode", False)
+        return config
 
     def account(self, uid, config):
         try:
@@ -113,6 +119,9 @@ class Core:
     def runtime(self, uid):
         return {**deepcopy(DEFAULT_RUNTIME), **read(self.run / str(uid) / "runtime.json", {})}
 
+    def school(self, user, profile):
+        return self.school_reader(user.pw_name, profile.get("respect_school_mode") is True, self.clock())
+
     @staticmethod
     def remaining(day):
         return max(0, day["budget_seconds"] + day["credited_seconds"] + day["granted_seconds"] - day["spent_seconds"])
@@ -135,12 +144,23 @@ class Core:
         moment = datetime.fromtimestamp(self.clock()).strftime("%H:%M")
         blocking = next((p for p in profile["blocked_periods"] if p["enabled"] and
             (p["start"] <= moment < p["end"] if p["start"] < p["end"] else moment >= p["start"] or moment < p["end"])), None)
-        reason = None if profile["philosophy"] == "together" else "bedtime" if blocking else "empty" if self.remaining(day) <= 0 else None
+        school = self.school(user, profile)
         in_use = session.get("present") and session.get("active") and not session.get("locked")
-        phase = "paused" if rt["paused"] else reason or ("running" if in_use else "idle")
-        status.update(phase=phase, counting=phase == "running", philosophy=profile["philosophy"],
+        if rt.get("parent_lock_requested"):
+            phase = "parent-lock"
+        elif rt["paused"]:
+            phase = "paused"
+        elif profile["philosophy"] == "limits" and blocking:
+            phase = "bedtime"
+        elif school["active"]:
+            phase = "school"
+        elif profile["philosophy"] == "limits" and self.remaining(day) <= 0:
+            phase = "empty"
+        else:
+            phase = "running" if in_use else "idle"
+        status.update(phase=phase, counting=phase == "running", philosophy=profile["philosophy"], school_mode=school,
             reflections=[{"t": item["t"], "text": item["meta"]["text"]} for item in day["ledger"] if item["kind"] == "reflection"][-20:])
-        status["credits"] = {"enabled": profile["credits"]["enabled"], "cap_seconds": profile["credits"]["daily_cap_minutes"] * 60,
+        status["credits"] = {"enabled": profile["credits"]["enabled"] and not school["active"] and not rt.get("parent_lock_requested", False), "cap_seconds": profile["credits"]["daily_cap_minutes"] * 60,
             "room_seconds": max(0, profile["credits"]["daily_cap_minutes"] * 60 - day["credited_seconds"]),
             "providers": {key: {**policy, "credited_today_seconds": day["credit_totals"].get(key, 0)}
                 for key, policy in profile["credits"]["providers"].items()}}
@@ -280,7 +300,9 @@ class Core:
                 reason = ""
                 if not credits["enabled"] or not policy.get("enabled"):
                     reason = "credits_disabled"
-                elif profile["philosophy"] != "limits" or rt.get("paused") or blocked:
+                elif self.school(user, profile)["active"]:
+                    reason = "school_mode_active"
+                elif profile["philosophy"] != "limits" or rt.get("paused") or rt.get("parent_lock_requested") or blocked:
                     reason = "policy_blocked"
                 elif not session.get("present") or not session.get("active") or session.get("locked") or not 0 <= self.clock() - rt.get("updated_at", 0) <= 30:
                     reason = "session_unavailable"
@@ -318,6 +340,8 @@ def patch_profile(profile, patch, providers):
             valid = isinstance(value, str) and len(value) <= (40 if key == "name" else 500)
         elif key == "philosophy":
             valid = value in ("limits", "together")
+        elif key == "respect_school_mode":
+            valid = type(value) is bool
         elif key == "on_empty":
             valid = value in ("lock", "notify")
         elif key in ("agreement_minutes", "break_nudge_minutes", "grace_seconds", "relock_seconds", "unlock_grace_seconds"):

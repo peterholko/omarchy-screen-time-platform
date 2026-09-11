@@ -18,8 +18,8 @@ Panel {
   // In together mode the widget is a mirror, not a meter: it shows time
   // spent, never counts down, and carries no warning colours.
   readonly property bool together: screenTime ? screenTime.philosophy === "together" : false
-  readonly property bool blockedPhase: phase === "empty" || phase === "bedtime"
-  readonly property bool low: connected && !together && !blockedPhase
+  readonly property bool blockedPhase: phase === "empty" || phase === "bedtime" || phase === "parent-lock"
+  readonly property bool low: connected && !together && !blockedPhase && phase !== "school"
     && remaining <= (screenTime ? screenTime.minWarnSeconds : 60)
 
   // Glyphs as \u escapes so they survive the trip through the editor.
@@ -34,8 +34,8 @@ Panel {
 
   readonly property string icon: {
     if (phase === "bedtime") return iconMoon
-    if (phase === "empty") return iconLock
-    if (phase === "paused") return iconPause
+    if (phase === "empty" || phase === "parent-lock") return iconLock
+    if (phase === "paused" || phase === "school") return iconPause
     if (phase === "idle") return iconClock
     return iconHourglass
   }
@@ -60,7 +60,7 @@ Panel {
     if (!root.bar) return "white"
     if (blockedPhase) return blockColor
     if (low) return warnColor
-    if (phase === "idle" || phase === "paused") return fade(root.bar.barForeground, 0.45)
+    if (phase === "idle" || phase === "paused" || phase === "school") return fade(root.bar.barForeground, 0.45)
     return root.bar.barForeground
   }
 
@@ -93,6 +93,8 @@ Panel {
   }
 
   readonly property string label: {
+    if (phase === "parent-lock") return "Locking"
+    if (phase === "school") return "School"
     if (together) return fmt(screenTime ? screenTime.spentSeconds : 0)
     if (blockedPhase) return phase === "bedtime" ? blockedName : "0:00"
     return fmt(remaining)
@@ -106,6 +108,8 @@ Panel {
   // the stat row, so this says the thing a number cannot.
   readonly property string stateLine: {
     if (!screenTime) return ""
+    if (phase === "parent-lock") return "lock requested by a parent"
+    if (phase === "school") return "School Mode · free-time budget paused"
     if (phase === "empty") return "time is up"
     if (phase === "bedtime") return blockedName
     if (phase === "paused") return "paused by a parent"
@@ -299,6 +303,7 @@ Panel {
           foreground: Color.popups.text
           title: root.heroTitle
           detail: {
+            if (root.phase === "parent-lock") return "parent lock"
             if (root.together) return root.fmt(root.screenTime ? root.screenTime.spentSeconds : 0) + " today"
             if (root.blockedPhase) return root.phase === "bedtime" ? root.blockedName : "time's up"
             return root.fmt(root.remaining) + " left"
@@ -308,6 +313,7 @@ Panel {
           // the agreed time is also the progress bar's scale.
           meta: {
             if (!root.screenTime) return ""
+            if (root.phase === "school" || root.phase === "parent-lock") return root.stateLine
             if (root.together) {
               if (root.phase === "paused") return "paused"
               if (root.screenTime.stretchSeconds >= 600)

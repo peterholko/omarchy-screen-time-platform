@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "peterholko.screen-time",
   "name": "Screen Time",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Peter Holko",
   "license": "MIT",
   "description": "Daily screen-time budgets, blocked periods, parent controls and a credit API for independently verified game achievements.",

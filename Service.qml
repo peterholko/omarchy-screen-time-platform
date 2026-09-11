@@ -12,7 +12,7 @@ Item {
   property var shell: null
 
   property bool connected: false
-  property string phase: ""          // running | idle | paused | empty | bedtime
+  property string phase: ""          // running | idle | paused | school | empty | bedtime | parent-lock
   property string profileName: ""
   property int budgetSeconds: 0
   property int spentSeconds: 0

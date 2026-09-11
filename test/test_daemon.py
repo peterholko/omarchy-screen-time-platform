@@ -30,9 +30,10 @@ class DaemonTest(unittest.TestCase):
         self.rt = {"day": self.day["day"], "paused": False, "stretch": 0, "rest_since": None, "nudged": False,
             "lock_after": None, "lock_count": 0, "lock_failures": 0, "last_lock_ok": False, "blocked_since": None}
         self.session = {"present": True, "active": True, "locked": False, "id": "3"}
+        self.school = {"linked": False, "available": False, "active": False, "reason": "disabled"}
 
     def tick(self, **override):
-        args = dict(day=self.day, rt=self.rt, profile=self.profile, session=self.session, now=1000,
+        args = dict(day=self.day, rt=self.rt, profile=self.profile, session=self.session, school=self.school, now=1000,
             step=5, tick=5, rest_reset=300, lock_failures_max=3, moment="12:00", daykey=self.day["day"])
         return jq(TICK_JQ, **{**args, **override})
 
@@ -48,6 +49,70 @@ class DaemonTest(unittest.TestCase):
 
     def test_default_profiles_match_python(self):
         self.assertEqual(jq("default_profile"), self.profile)
+
+    def test_school_pauses_accounting_warnings_and_pending_budget_locks(self):
+        self.profile["respect_school_mode"] = True
+        self.school = {"linked": True, "available": True, "active": True, "reason": "school"}
+        self.day.update(spent_seconds=3595, credited_seconds=60, granted_seconds=120,
+            credit_totals={"test.game": 60}, credit_receipts={"receipt": {"credited_seconds": 60}})
+        self.assertEqual(self.tick()["day"], self.day)
+        self.assertFalse(self.tick()["actions"])
+        self.day["spent_seconds"] = 5000
+        self.rt.update(blocked_since=900, lock_after=990, lock_count=3, lock_failures=3)
+        school = self.tick()
+        self.assertFalse(school["actions"])
+        self.assertIsNone(school["rt"]["lock_after"])
+        self.assertEqual(school["day"], self.day)
+        free = self.tick(rt=school["rt"], now=1005, school={**self.school, "active": False, "reason": "free"})
+        self.assertEqual(free["rt"]["lock_after"], 1065)
+        self.day["spent_seconds"] = 100
+        self.assertEqual(self.tick(school={**self.school, "active": False})["day"]["spent_seconds"], 105)
+
+    def test_school_connection_must_be_enabled_and_available(self):
+        active = {"linked": True, "available": True, "active": True}
+        self.assertEqual(self.tick(school=active)["day"]["spent_seconds"], 5)
+        self.profile["respect_school_mode"] = True
+        for school in (self.school, {**active, "available": False}, {**active, "linked": False}):
+            self.assertEqual(self.tick(school=school)["day"]["spent_seconds"], 5)
+        self.assertTrue(jq('$p | sanitize_profile', p=self.profile)["respect_school_mode"])
+        self.assertFalse(jq('$p | sanitize_profile', p={**self.profile, "respect_school_mode": "true"})["respect_school_mode"])
+
+    def test_school_pauses_agreement_but_not_bedtime_or_parent_lock(self):
+        self.profile["respect_school_mode"] = True
+        self.school = {"linked": True, "available": True, "active": True, "reason": "school"}
+        self.profile["blocked_periods"][0]["enabled"] = True
+        bedtime = self.tick(moment="20:00")
+        self.assertEqual(bedtime["rt"]["lock_after"], 1060)
+        self.assertIn({"type": "lock", "reason": "bedtime"}, self.tick(rt=bedtime["rt"], moment="20:01", now=1060)["actions"])
+        self.profile.update(philosophy="together", agreement_minutes=1, break_nudge_minutes=1)
+        self.day["spent_seconds"] = 59
+        self.rt["stretch"] = 59
+        self.assertEqual(self.tick()["day"], self.day)
+        self.assertFalse(self.tick()["actions"])
+        self.profile["on_empty"] = "notify"
+        first = self.tick(rt={**self.rt, "parent_lock_requested": True, "paused": True})
+        self.assertIn({"type": "lock", "reason": "parent"}, self.tick(rt=first["rt"])["actions"])
+
+    def test_published_school_phase_and_credits_match_the_core_policy(self):
+        self.profile.update(respect_school_mode=True)
+        self.profile["credits"]["enabled"] = True
+        self.day["spent_seconds"] = 4000
+        runtime = {**self.rt, "session": self.session, "lock_after": 1005,
+            "school_mode": {"linked": True, "available": True, "active": True, "reason": "school"}}
+        script = 'source "$1"; st_moment() { echo "$5"; }; st_status_json 1000 linnea 1000 linnea "$2" "$3" "$4" false'
+        def status(moment="12:00"):
+            return json.loads(subprocess.check_output([BASH, "-c", script, "test", str(LIB), json.dumps(self.profile), json.dumps(self.day), json.dumps(runtime), moment], text=True))
+        result = status()
+        self.assertEqual(result["phase"], "school")
+        self.assertFalse(result["counting"])
+        self.assertFalse(result["credits"]["enabled"])
+        self.assertIsNone(result["lock_in_seconds"])
+        self.profile["blocked_periods"][0]["enabled"] = True
+        self.assertEqual(status("20:01")["phase"], "bedtime")
+        runtime.update(parent_lock_requested=True, paused=True)
+        self.profile["philosophy"] = "together"
+        self.assertEqual(status()["phase"], "parent-lock")
+        self.assertEqual(status()["lock_in_seconds"], 5)
 
     def test_counts_active_session_and_caps_resume_gap(self):
         self.assertEqual(self.tick()["day"]["spent_seconds"], 5)

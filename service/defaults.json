@@ -1,6 +1,7 @@
 {
   "name": "Default",
   "philosophy": "limits",
+  "respect_school_mode": false,
   "budget_minutes": {"mon": 60, "tue": 60, "wed": 60, "thu": 60, "fri": 60, "sat": 90, "sun": 90},
   "blocked_periods": [{"label": "Bedtime", "enabled": false, "start": "20:00", "end": "07:00"}],
   "warn_minutes": [15, 5, 1],

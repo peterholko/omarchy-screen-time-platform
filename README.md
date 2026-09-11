@@ -2,7 +2,7 @@
 
 Screen-time management with daily budgets, blocked periods, parent controls and an optional API for games to award time. The programmatic plugin ID is **`peterholko.screen-time`**. There are no built-in math questions or practice activities, and nothing opens a math exercise after login or unlock.
 
-This is a separate plugin from [School & Screen Time](https://github.com/peterholko/omarchy-screen-time) and [Omarchy Kids](https://github.com/peterholko/omarchy-kids). It does not replace their school schedules, app restrictions or settings. It does not automatically exempt school hours from accounting.
+Screen Time can optionally connect to the separate [School / Free Time plugin](https://github.com/peterholko/omarchy-school-mode), which owns the school schedule, application whitelist and password-protected Free Time. Both plugins remain independently installable with their own parent settings panels. The connection starts disabled.
 
 ![Parent controls showing daily budgets and blocked periods](docs/images/parent-controls.png)
 
@@ -40,11 +40,28 @@ Log out and back in to activate the account's new group membership. Open **Scree
 omarchy-peterholko-screen-time parent
 ```
 
-Default budgets are 60 minutes on weekdays and 90 minutes on weekends. Bedtime restrictions, game credits and the parent PIN start disabled.
+Default budgets are 60 minutes on weekdays and 90 minutes on weekends. Bedtime restrictions, game credits, the School Mode connection and the parent PIN start disabled.
 
 **Use one screen-time enforcer per account.** Setup refuses an account already listed in the combined plugin, Omarchy Kids time module or original PR's screen-time roster. Existing installations and rosters are left untouched. To trial this plugin, use an account without another screen-time enrollment, or intentionally remove that account from the previous service first. Disabling or hiding an old bar widget does not stop its background service.
 
 Setup installs reviewed files from this checkout under distinct `peterholko-screen-time` paths. It does not download or install other software. `OMARCHY_PATH` comes from the desktop environment and is saved for the service, including installations outside `/usr/share/omarchy`.
+
+## Optional School Mode connection
+
+Install and set up the original [School / Free Time plugin](https://github.com/peterholko/omarchy-school-mode#install) for the same child account. Its application whitelist, schedule, desktop restrictions and parent controls stay in that plugin. A school-only enrollment can coexist with this Screen Time service.
+
+Open **Screen Time → Parent controls → School Mode**, enable **Connect to the separate School Mode plugin**, and save with the parent password or enabled PIN.
+
+- While School Mode is active, the free-time budget, low-time warnings, budget countdown and game rewards pause. A used-up free-time budget does not lock the school session.
+- Free Time resumes the remaining budget. Spent time, earned time, parent grants and daily game caps are retained.
+- Bedtime and other blocked periods still apply in Limits mode. An explicit parent lock still applies in either mode. Agreement usage tracking and break reminders also pause during school hours.
+- If School Mode is absent, unenrolled, stopped or its status is unreadable or more than 30 seconds old, normal screen-time rules apply. Turning the connection off restores normal accounting immediately, with enforcement updated on the next service tick.
+
+The connection reads the School Mode service's root-owned status for the enrolled account. It does not trust a shell widget's claimed mode, change the application whitelist or write to School Mode's settings. Changes normally appear within one five-second accounting tick.
+
+![Parent controls showing the optional School Mode connection](docs/images/school-mode.png)
+
+This screenshot shows the actual parent application with test data. School Mode retains its existing controls parent password; Screen Time uses its own parent password or optional PIN. Connecting them does not merge their credentials.
 
 ## Update
 
@@ -62,9 +79,9 @@ Setup keeps settings, PIN configuration and usage history. It refuses to overwri
 
 The parent enables credits under **Connected games**, chooses an overall daily cap, and sets a reward and daily cap for each compatible game. Both the overall switch and the game's switch must be enabled. The platform chooses the credited amount; a game cannot request an arbitrary number of minutes.
 
-**The existing Pawberry Pet Hotel, Number Grove and Paw Post Typing releases are not connected to this new plugin yet.** Their current versions are unchanged. See the [three-game integration plan](docs/game-integration-plan.md) for the required changes.
+[Pawberry Pet Hotel 1.6.0+](https://github.com/peterholko/omarchy-pawberry), [Number Grove 1.1.0+](https://github.com/peterholko/omarchy-number-grove) and [Paw Post Typing 1.1.0+](https://github.com/peterholko/omarchy-paw-post) support this platform from their individual repositories. Each game's service setup registers its verifier; parent opt-in is still required. The games remain playable without Screen Time. The [integration design](docs/game-integration-plan.md) records how verified completions reach the platform.
 
-The [API guide](docs/credit-api.md) and [Python adapter](service/sdk.py) describe registration, trusted completion verification, duplicate protection and failure handling. Game credits require a current active, unlocked session in Limits mode and stop during blocked periods or a parent pause. Replaying a completion receipt cannot add time twice.
+The [API guide](docs/credit-api.md) and [Python adapter](service/sdk.py) describe registration, trusted completion verification, duplicate protection and failure handling. Game credits require a current active, unlocked session in Limits mode and stop during blocked periods, a parent pause or lock request, or connected School Mode. Replaying a completion receipt cannot add time twice. A completion refused during School Mode cannot earn time by being resubmitted in Free Time; ordinary game progress is unaffected.
 
 ## Administration and troubleshooting
 

@@ -15,6 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "service"))
 from core import Core, DEFAULT_PROFILE, read, write
+from school import snapshot as school_snapshot
 
 
 class PlatformTest(unittest.TestCase):
@@ -23,8 +24,10 @@ class PlatformTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         self.now = datetime(2026, 9, 10, 12).timestamp()
+        self.school_root = root / "controls"
         self.core = Core(root / "etc", root / "state", root / "run", clock=lambda: self.now,
-            verifier=lambda password: password == " correct parent password ")
+            verifier=lambda password: password == " correct parent password ",
+            school_reader=lambda user, enabled, now: school_snapshot(user, enabled, now, root=self.school_root, owner=os.getuid()))
         self.uid = os.getuid() or pwd.getpwnam("nobody").pw_uid
         self.user = pwd.getpwuid(self.uid).pw_name
         config = self.core.config()
@@ -49,6 +52,72 @@ class PlatformTest(unittest.TestCase):
         config = self.core.config()
         user, key, profile = self.core.account(self.uid, config)
         return self.core.day(user, key, profile)[1]
+
+    def school_status(self, mode="school", **changes):
+        path = self.school_root / "status" / self.user / "school-mode/status.json"
+        write(path, {"schemaVersion": 1, "enabled": True, "mode": mode, "updatedAt": self.now, **changes}, 0o644)
+        os.utime(path, (self.now, self.now))
+        return path
+
+    def test_school_connection_is_opt_in_and_parent_protected(self):
+        self.school_status()
+        config = self.core.config()
+        del config["profiles"]["default"]["respect_school_mode"]
+        write(self.core.etc / "config.json", config)
+        self.assertFalse(self.send("config.get")["profile"]["respect_school_mode"])
+        self.assertFalse(self.send("config.patch", credential="wrong", patch={"respect_school_mode": True})["ok"])
+        for value in (1, "true", None, {}):
+            self.assertEqual(self.send("config.patch", patch={"respect_school_mode": value})["error"], "invalid_patch")
+        self.assertFalse(self.core.config()["profiles"]["default"]["respect_school_mode"])
+        self.send("pin.set", enabled=True, new_pin="2468")
+        self.assertTrue(self.send("config.patch", auth_method="pin", credential="2468", patch={"respect_school_mode": True})["ok"])
+
+    def test_school_blocks_rewards_without_erasing_totals_or_replaying_later(self):
+        self.enable_credits()
+        self.send("grant", minutes=15)
+        first = self.award("before-school")
+        self.school_status()
+        self.send("config.patch", patch={"respect_school_mode": True})
+        blocked = self.award("during-school")
+        self.assertEqual((blocked["credited_seconds"], blocked["reason"]), (0, "school_mode_active"))
+        self.assertEqual(self.award("before-school")["credited_seconds"], first["credited_seconds"])
+        self.assertEqual(self.day()["credited_seconds"], 120)
+        status = read(self.core.run / str(self.uid) / "status.json", {})
+        self.assertEqual(status["phase"], "school")
+        self.assertFalse(status["counting"])
+        self.assertFalse(status["credits"]["enabled"])
+        self.assertTrue(self.core.config()["profiles"]["default"]["credits"]["enabled"])
+        self.school_status("free")
+        self.assertEqual(self.award("during-school")["credited_seconds"], 0)
+        self.assertEqual(self.award("after-school")["credited_seconds"], 120)
+        self.send("config.patch", patch={"respect_school_mode": False})
+        self.assertEqual(self.day()["credited_seconds"], 240)
+        self.assertEqual(self.day()["granted_seconds"], 900)
+        self.assertEqual(len(self.day()["credit_receipts"]), 3)
+
+    def test_school_status_does_not_override_bedtime_or_parent_lock(self):
+        self.school_status()
+        self.send("config.patch", patch={"respect_school_mode": True, "budget_minutes": {"thu": 0}})
+        status_path = self.core.run / str(self.uid) / "status.json"
+        self.assertEqual(read(status_path, {})["phase"], "school")
+        self.send("config.patch", patch={"blocked_periods": [{"label": "Rest", "enabled": True, "start": "11:00", "end": "13:00"}]})
+        self.assertEqual(read(status_path, {})["phase"], "bedtime")
+        self.send("pause")
+        self.send("config.patch", patch={"philosophy": "together"})
+        self.send("lock")
+        self.assertEqual(read(status_path, {})["phase"], "parent-lock")
+        self.assertTrue(self.core.runtime(self.uid)["parent_lock_requested"])
+
+    def test_link_disabled_or_stale_school_status_keeps_normal_rules(self):
+        self.enable_credits()
+        path = self.school_status()
+        self.assertEqual(self.award("link-off")["credited_seconds"], 120)
+        self.send("config.patch", patch={"respect_school_mode": True})
+        os.utime(path, (self.now - 31, self.now - 31))
+        self.assertEqual(self.award("stale-school")["credited_seconds"], 120)
+        status = read(self.core.run / str(self.uid) / "status.json", {})
+        self.assertEqual(status["phase"], "running")
+        self.assertEqual(status["school_mode"]["reason"], "stale")
 
     def test_default_password_no_questions_and_no_public_credit_command(self):
         self.assertFalse(self.core.config()["authentication"]["pin_enabled"])

@@ -16,7 +16,7 @@ Item {
   // Never in together mode: nothing counts down there.
   readonly property bool together: service ? service.philosophy === "together" : false
   readonly property string phase: service ? String(service.phase) : ""
-  readonly property bool graceToLock: (phase === "empty" || phase === "bedtime")
+  readonly property bool graceToLock: (phase === "empty" || phase === "bedtime" || phase === "parent-lock")
     && service && service.lockInSeconds !== null && !service.locked
   readonly property bool lastMinutes: phase === "running" && service
     && service.remainingSeconds > 0 && service.remainingSeconds <= 300
@@ -36,6 +36,7 @@ Item {
 
   readonly property string caption: {
     if (graceToLock) {
+      if (phase === "parent-lock") return "A parent requested a screen lock."
       if (phase !== "bedtime") return "Time is up. The screen is about to lock."
       var label = service ? String(service.blockedLabel || "").trim() : ""
       return (label === "" ? "Blocked" : label) + ". The screen is about to lock."

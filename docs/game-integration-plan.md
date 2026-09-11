@@ -1,6 +1,8 @@
-# Connecting the three games
+# Three-game integration design
 
-This is the implementation plan for future game updates. The games and the existing combined School & Screen Time plugin have not been migrated by this release. Each game should remain independently installable and playable without Screen Time.
+This design has been implemented in the individual repositories: Pawberry Pet Hotel 1.6.0, Number Grove 1.1.0 and Paw Post Typing 1.1.0. The sections below retain the original implementation plan and describe the previous adapters as they existed when planning began. All three games remain independently installable and playable without Screen Time. The combined plugin and Omarchy Kids repository were not updated.
+
+Screen Time 1.1.0 also supports an optional connection to the original School Mode plugin. Its effective credit availability flag and root credit policy pause rewards during connected School Mode, so these game releases need no additional API migration for that connection.
 
 ## Shared approach
 
@@ -52,7 +54,7 @@ An issued challenge and pacing checks discourage trivial reward-button abuse; th
 
 ## Rollout and compatibility
 
-Ship Pawberry first, then Number Grove, then Paw Post. Update each game's individual plugin repository as well as its copy in Omarchy Kids, with focused backend tests and local UI verification. Keep Screen Time free of game-specific imports and practice content.
+Updates ship in each game's individual plugin repository, with focused backend tests and local UI verification. Keep Screen Time free of game-specific imports and practice content. Omarchy Kids is outside this rollout.
 
 During the transition, an explicit per-game backend selection may retain compatibility with the old combined plugin. Pin that choice into each pending receipt. Never send one completion to both backends, and never move an unresolved receipt to the other backend after a timeout.
 

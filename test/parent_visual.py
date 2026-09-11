@@ -61,6 +61,25 @@ def main():
     window.grab().save(str(output / "parent-controls-compact.png"))
     window.budgets["thu"].setValue(35); click(window, "saveSettings"); wait(window)
     assert fixture.core.config()["profiles"]["default"]["budget_minutes"]["thu"] == 35
+    window.tabs.setCurrentIndex(5)
+    assert not window.respect_school.isChecked()
+    fixture.school_status()
+    window.respect_school.setChecked(True); click(window, "saveSettings"); wait(window)
+    assert fixture.core.config()["profiles"]["default"]["respect_school_mode"]
+    assert "School Mode is active" in window.school_status.text()
+    window.resize(820, 740); QTest.qWait(100)
+    window.grab().save(str(output / "school-mode.png"))
+    window.resize(700, 600); QTest.qWait(100)
+    window.grab().save(str(output / "school-mode-compact.png"))
+    fixture.school_status("free")
+    fixture.send("config.patch", patch={"respect_school_mode": True}); window.refresh_status()
+    assert "Free Time is active" in window.school_status.text()
+    fixture.school_status(updatedAt=fixture.now - 31)
+    fixture.send("config.patch", patch={"respect_school_mode": True}); window.refresh_status()
+    assert "unavailable" in window.school_status.text()
+    window.respect_school.setChecked(False); click(window, "saveSettings"); wait(window)
+    assert window.school_status.text() == "Connection is off."
+    assert not fixture.core.config()["profiles"]["default"]["respect_school_mode"]
     window.tabs.setCurrentIndex(0); click(window, "pauseTracking"); wait(window)
     assert window.pause.text() == "Resume tracking"
     click(window, "pauseTracking"); wait(window)
@@ -81,7 +100,7 @@ def main():
     assert not fixture.core.config()["authentication"]["pin_enabled"]
     assert not window.auth_method.model().item(1).isEnabled()
     window.close(); fixture.doCleanups()
-    print("Parent UI: password feedback/failure, settings, pause/resume, game caps, PIN lifecycle and compact layout passed.")
+    print("Parent UI: password feedback/failure, settings, School Mode connection and statuses, pause/resume, game caps, PIN lifecycle and compact layout passed.")
 
 
 if __name__ == "__main__":

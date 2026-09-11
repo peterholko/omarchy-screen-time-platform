@@ -28,7 +28,7 @@ Requires Omarchy's Quickshell desktop with native plugins, Python, PySide6, jq, 
 Run from the child's Omarchy desktop terminal, with the parent available to authorize setup. Replace `CHILD_USERNAME` with the account to manage:
 
 ```bash
-omarchy pkg add python python-pyside6 jq inotify-tools
+omarchy pkg add python pyside6 jq inotify-tools
 omarchy plugin add https://github.com/peterholko/omarchy-screen-time-platform --enable
 cd "$HOME/.config/omarchy/plugins/peterholko.screen-time"
 ./setup --user CHILD_USERNAME

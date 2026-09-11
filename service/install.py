@@ -135,7 +135,7 @@ def main():
     assert_no_conflict(user.pw_name)
     for command in ("jq", "inotifywait", "flock", "loginctl", "runuser", "visudo", "systemctl", "getent", "usermod"):
         if not shutil.which(command):
-            raise ValueError(f"Missing {command}. Install dependencies with: omarchy pkg add python python-pyside6 jq inotify-tools")
+            raise ValueError(f"Missing {command}. Install dependencies with: omarchy pkg add python pyside6 jq inotify-tools")
     subprocess.run(["/usr/bin/python3", "-I", "-c", "from PySide6 import QtWidgets"], check=True)
     shadow = subprocess.run(["/usr/bin/getent", "shadow", "root"], capture_output=True, text=True, check=True).stdout.split(":")
     if len(shadow) < 2 or not shadow[1] or shadow[1].startswith(("!", "*")):

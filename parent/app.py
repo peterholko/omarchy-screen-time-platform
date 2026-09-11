@@ -259,7 +259,12 @@ class ParentWindow(QMainWindow):
             self.pause.setText("Resume tracking" if status.get("phase") == "paused" else "Pause tracking")
 
     def sign_in(self):
-        if self.busy or not self.password.text():
+        if self.busy:
+            return
+        if not self.password.text():
+            credential_name = "parent PIN" if self.auth_method.currentData() == "pin" else "parent password"
+            self.feedback.setText(f"Enter the {credential_name} to open settings.")
+            self.password.setFocus()
             return
         self.credential = self.password.text()  # Spaces can be part of a password.
         self.method = self.auth_method.currentData(); self.password.clear()
@@ -353,6 +358,8 @@ class ParentWindow(QMainWindow):
                 "password_checking": "Another parent password is being checked. Try again shortly.",
                 "invalid_patch": "Check the settings: " + str(result.get("field", "invalid value")),
                 "not_managed": "Set up the Screen Time service for this account first.",
+                "not_permitted": "Screen Time access is unavailable. Log out and back in after setup. If this continues, rerun Screen Time setup for this account.",
+                "unavailable": "Could not reach Screen Time. Check that setup completed, then try again.",
                 "authentication_unavailable": "Parent authentication is unavailable. Check the service installation."}
             message = messages.get(error, "Could not confirm the change. Reopen settings to check the saved values.")
             if error in ("bad_password", "bad_pin", "pin_disabled", "credentials_changed", "password_locked_out"):

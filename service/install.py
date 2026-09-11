@@ -160,7 +160,7 @@ def main():
         atomic_file(path, data, mode)
     for old in set(previous) - {str(path) for path in files}:
         Path(old).unlink(missing_ok=True)
-    atomic_file(RECORD, json.dumps({"version": "1.1.0", "files": {str(path): digest(data) for path, (data, _) in files.items()}}).encode(), 0o600)
+    atomic_file(RECORD, json.dumps({"version": "1.1.1", "files": {str(path): digest(data) for path, (data, _) in files.items()}}).encode(), 0o600)
     subprocess.run(["/usr/bin/omarchy-peterholko-screen-time-admin", "enroll", user.pw_name], check=True)
     subprocess.run(["/usr/bin/systemctl", "daemon-reload"], check=True)
     subprocess.run(["/usr/bin/systemctl", "enable", "--now", UNIT], check=True)

@@ -40,6 +40,8 @@ Log out and back in to activate the account's new group membership. Open **Scree
 omarchy-peterholko-screen-time parent
 ```
 
+In that window, enter the parent password, then click **Open parent controls**. Settings open in the same window after authentication. An empty password shows a prompt, and a failed check or missing service access shows a message at the bottom of the window. If access is unavailable after installation, log out and back in; if it persists, rerun setup for the account.
+
 Default budgets are 60 minutes on weekdays and 90 minutes on weekends. Bedtime restrictions, game credits, the School Mode connection and the parent PIN start disabled.
 
 **Use one screen-time enforcer per account.** Setup refuses an account already listed in the combined plugin, Omarchy Kids time module or original PR's screen-time roster. Existing installations and rosters are left untouched. To trial this plugin, use an account without another screen-time enrollment, or intentionally remove that account from the previous service first. Disabling or hiding an old bar widget does not stop its background service.

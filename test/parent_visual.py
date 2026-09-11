@@ -23,8 +23,15 @@ fixture = PlatformTest(); fixture.setUp()
 
 
 class Backend:
+    def __init__(self):
+        self.requests = 0
+        self.error = None
+
     def request(self, payload):
+        self.requests += 1
         time.sleep(0.15)
+        if self.error:
+            return {"ok": False, "error": self.error}
         return fixture.core.request(fixture.uid, payload)
 
     def status(self):
@@ -46,9 +53,25 @@ def click(window, name):
 
 def main():
     app = QApplication([]); app.setStyle("Fusion")
-    window = module.ParentWindow(Backend()); window.show(); QTest.qWait(100)
+    backend = Backend()
+    window = module.ParentWindow(backend); window.show(); QTest.qWait(100)
     output = ROOT / "docs/images"; output.mkdir(parents=True, exist_ok=True)
     assert not window.auth_method.model().item(1).isEnabled()
+    click(window, "signIn"); QTest.qWait(50)
+    assert "Enter the parent password" in window.feedback.text()
+    assert backend.requests == 0 and not window.busy and window.password.hasFocus()
+    assert window.pages.currentIndex() == 0
+    window.grab().save(str(output / "parent-sign-in-required.png"))
+    for error, message in (("not_permitted", "Log out and back in"), ("unavailable", "Check that setup completed")):
+        backend.error = error
+        window.password.setText(" correct parent password "); click(window, "signIn"); wait(window)
+        assert message in window.feedback.text()
+        assert window.pages.currentIndex() == 0 and window.pages.isEnabled()
+        if error == "not_permitted":
+            window.resize(700, 600); QTest.qWait(100)
+            window.grab().save(str(output / "parent-access-unavailable-compact.png"))
+            window.resize(820, 740)
+    backend.error = None
     window.password.setText("wrong password"); click(window, "signIn")
     assert "Checking" in window.feedback.text() and not window.pages.isEnabled()
     window.grab().save(str(output / "checking-password.png")); wait(window)
@@ -94,13 +117,18 @@ def main():
     window.pin_enabled.setChecked(True); window.new_pin.setText("2468"); window.confirm_pin.setText("2468")
     window.grab().save(str(output / "parent-pin.png")); click(window, "savePin"); wait(window)
     assert window.pages.currentIndex() == 0 and not window.credential
-    window.auth_method.setCurrentIndex(1); window.password.setText("2468"); click(window, "signIn"); wait(window)
+    window.auth_method.setCurrentIndex(1)
+    attempts = backend.requests
+    QTest.keyClick(window.password, Qt.Key_Return); QTest.qWait(50)
+    assert "Enter the parent PIN" in window.feedback.text() and window.password.hasFocus()
+    assert backend.requests == attempts and not window.busy and window.pages.currentIndex() == 0
+    window.password.setText("2468"); click(window, "signIn"); wait(window)
     assert window.pages.currentIndex() == 1
     window.tabs.setCurrentIndex(4); window.pin_enabled.setChecked(False); click(window, "savePin"); wait(window)
     assert not fixture.core.config()["authentication"]["pin_enabled"]
     assert not window.auth_method.model().item(1).isEnabled()
     window.close(); fixture.doCleanups()
-    print("Parent UI: password feedback/failure, settings, School Mode connection and statuses, pause/resume, game caps, PIN lifecycle and compact layout passed.")
+    print("Parent UI: empty password/PIN feedback, missing access/service feedback, password checking/failure, settings, School Mode connection and statuses, pause/resume, game caps, PIN lifecycle and compact layout passed.")
 
 
 if __name__ == "__main__":
